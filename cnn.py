@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.optim as optim
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 print(f"Using {device} device")
@@ -26,12 +27,18 @@ class NeuralNetwork(nn.Module):
 
 model = NeuralNetwork().to(device)
 
-# output a discrete action 
+
+criterion = nn.MSELoss() # this will end up being PPO 
+optimizer = optim.Adam(model.parameters(), lr=0.01)
+
 input_image = torch.rand(1, 3, 96, 96, device=device)
+
+# out
 logits = model(input_image)
 pred_probab = nn.Softmax(dim=1)(logits)
 y_pred = pred_probab.argmax(1)
 print(f"Predicted class: {y_pred}")
+
 
 
 
