@@ -1,54 +1,44 @@
-import torch
-from torch import nn
-import torch.optim as optim
+import torch as th
+import torch.nn as nn
+from gymnasium import spaces
 
-device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
-print(f"Using {device} device")
+from stable_baselines3 import PPO
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-# expected shape of car image 
-# (3, 96, 96)
-class NeuralNetwork(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        self.network = nn.Sequential(
-            nn.Conv2d(3, 16, 3),
+# replicated NatureCNN (default for Policy networks on stb3)
+# will be adopted into different versions
+# for kaggle: upload this file as a dataset, use python sys to import 
+class CustomCNN(BaseFeaturesExtractor):
+    """
+    :param observation_space: (gym.Space)
+    :param features_dim: (int) Number of features extracted.
+        This corresponds to the number of unit for the last layer.
+    """
+
+    def __init__(self, observation_space: spaces.Box, features_dim: int = 512):
+        super().__init__(observation_space, features_dim)
+        # We assume CxHxW images (channels first)
+        # Re-ordering will be done by pre-preprocessing or wrapper
+        n_input_channels = observation_space.shape[0]
+        self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4, padding=0),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(16 * 94 * 94, 128),
-            nn.ReLU(),
-            nn.Linear(128, 5)
         )
 
-    def forward(self, x):
-        x = self.network(x)
-        return x
+        # Compute shape by doing one forward pass
+        with th.no_grad():
+            n_flatten = self.cnn(
+                th.as_tensor(observation_space.sample()[None]).float()
+            ).shape[1]
+
+        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return self.linear(self.cnn(observations))
 
 
-model = NeuralNetwork().to(device)
-
-
-criterion = nn.MSELoss() # this will end up being PPO 
-optimizer = optim.Adam(model.parameters(), lr=0.01)
-
-input_image = torch.rand(1, 3, 96, 96, device=device)
-
-# out
-logits = model(input_image)
-pred_probab = nn.Softmax(dim=1)(logits)
-y_pred = pred_probab.argmax(1)
-print(f"Predicted class: {y_pred}")
-
-
-
-
-# # Save model parameters
-# torch.save(model.state_dict(), "model.pth")
-
-# # Recreate architecture
-# model = NeuralNetwork()
-
-# # Load saved parameters
-# model.load_state_dict(
-#     torch.load("model.pth", weights_only=True)
-# )
